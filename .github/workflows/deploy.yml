@@ -1,0 +1,67 @@
+# GitHub Actions 작업 칸에서 보기 위한 작업이름
+name: Bastion
+
+# main 브랜치에 push가 발생하면 아래 jobs를 실행
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    # 순서대로 실행되는 작업들
+    steps:
+      ## 1. IDE 작업 순서
+      # 저장소 코드 내려 받기
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # Node.js 설치 + npm 캐시 사용
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      # 의존성 설치
+      - name: Install dependencies
+        run: npm ci
+
+      # React 빌드
+      - name: React 파일 빌드
+        run: npm run build
+
+      # SSH 접속 준비 (키 파일 만들고 known_hosts 등록)
+      - name: SSH 키 준비
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.BASTION_SSH_KEY }}" > ~/.ssh/deploy.key
+          chmod 600 ~/.ssh/deploy.key
+          ssh-keyscan -T 5 -H ${{ secrets.BASTION_HOST }} >> ~/.ssh/known_hosts || true
+
+      ## 2. bastion 서버로 movie_dist01 업로드
+      - name: Bastion에 파일 업로드 
+        run: |
+          ssh -i ~/.ssh/deploy.key \
+            ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }} \
+            "mkdir -p ~/movie_dist01 && rm -rf ~/movie_dist01/*"
+
+          rsync -avz \
+            -e "ssh -i ~/.ssh/deploy.key" \
+            movie_dist01/ \
+            ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }}:~/movie_dist01/
+
+      ## 3. Nginx 서버 작업 (bastion -> nginx2a 전달 후 nginx reload)
+      - name: Bastion에서 nginx로 파일 이동 후 재시작
+        run: |
+          ssh -i ~/.ssh/deploy.key \
+            ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }} "
+              rsync -avz ~/movie_dist01/ nginx2a:/home/ubuntu/movie_dist01/ &&
+              ssh nginx2a '
+                sudo rm -rf /var/www/react/* &&
+                sudo cp -r /home/ubuntu/movie_dist01/* /var/www/react/ &&
+                sudo systemctl reload nginx
+              '
+            "
