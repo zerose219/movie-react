@@ -37,26 +37,26 @@ jobs:
       - name: SSH 키 준비
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.BASTION_SSH_KEY }}" > ~/.ssh/deploy.key
-          chmod 600 ~/.ssh/deploy.key
+          echo "${{ secrets.BASTION_SSH_KEY }}" > ~/.ssh/kakao_kepair.pem
+          chmod 600 ~/.ssh/kakao_kepair.pem
           ssh-keyscan -T 5 -H ${{ secrets.BASTION_HOST }} >> ~/.ssh/known_hosts || true
 
       ## 2. bastion 서버로 movie_dist01 업로드
       - name: Bastion에 파일 업로드 
         run: |
-          ssh -i ~/.ssh/deploy.key \
+          ssh -i ~/.ssh/kakao_kepair.pem \
             ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }} \
             "mkdir -p ~/movie_dist01 && rm -rf ~/movie_dist01/*"
 
           rsync -avz \
-            -e "ssh -i ~/.ssh/deploy.key" \
+            -e "ssh -i ~/.ssh/kakao_kepair.pem" \
             movie_dist01/ \
             ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }}:~/movie_dist01/
 
       ## 3. Nginx 서버 작업 (bastion -> nginx2a 전달 후 nginx reload)
       - name: Bastion에서 nginx로 파일 이동 후 재시작
         run: |
-          ssh -i ~/.ssh/deploy.key \
+          ssh -i ~/.ssh/kakao_kepair.pem \
             ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }} "
               rsync -avz ~/movie_dist01/ nginx2a:/home/ubuntu/movie_dist01/ &&
               ssh nginx2a '
